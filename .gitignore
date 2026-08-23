@@ -1,0 +1,32 @@
+# Datasets (download separately, see README)
+data/
+
+# Experiment outputs
+results/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs
+*.log
+nohup.out
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Baseline upstream clones (re-fetched by setup_baselines.sh)
+baselines/ts2vec/ts2vec/
+baselines/trep/T-Rep/
+baselines/autotcl/AutoTCL/
+baselines/softclt/softclt/
+baselines/timesurl/TimesURL/
+baselines/infots/InfoTS/
+baselines/cost/CoST/
+baselines/simmtm/SimMTM/
+baselines/ts_jepa/TS_JEPA/
+baselines/fei/Frequency-masked-Embedding-Inference/

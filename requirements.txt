@@ -1,0 +1,12 @@
+torch>=2.0
+numpy
+pandas
+scipy
+scikit-learn
+matplotlib
+bottleneck
+tslearn
+einops
+tsaug
+tqdm
+psutil

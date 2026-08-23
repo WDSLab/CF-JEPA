@@ -1,0 +1,4 @@
+PenDigits
+SpokenArabicDigits
+FaceDetection
+InsectWingbeat
