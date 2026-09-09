@@ -128,6 +128,7 @@ def run_missing(missing, ngpu=1, hidden_dims=None, output_dims=None,
     sorted_groups = sorted(groups.items(),
                            key=lambda x: (method_order.get(x[0][0], 999), x[0][1]))
 
+    failures = []
     for (method, univar), datasets in sorted_groups:
         mode_str = 'univar' if univar else 'multivar'
         print(f"\n>>> {method} | {mode_str} | datasets: {sorted(datasets)}")
@@ -135,7 +136,7 @@ def run_missing(missing, ngpu=1, hidden_dims=None, output_dims=None,
         if ngpu > 1:
             cmd = ['torchrun', f'--nproc_per_node={ngpu}', 'scripts/benchmarks/run_forecast.py']
         else:
-            cmd = ['python', 'scripts/benchmarks/run_forecast.py']
+            cmd = [sys.executable, 'scripts/benchmarks/run_forecast.py']
 
         cmd += [
             '--method', method,
@@ -161,7 +162,17 @@ def run_missing(missing, ngpu=1, hidden_dims=None, output_dims=None,
             cmd += ['--eval_csv', eval_csv]
 
         print(f"  CMD: {' '.join(cmd)}")
-        subprocess.run(cmd)
+        rc = subprocess.run(cmd).returncode
+        if rc != 0:
+            failures.append((f'{method} | {mode_str}', rc))
+            print(f'  !! FAILED (exit {rc}) -- no results were written for this job')
+
+    if failures:
+        print(f'\n!! {len(failures)} job(s) failed and wrote no results:')
+        for label, rc in failures:
+            print(f'   {label}  (exit {rc})')
+        print(f'   Child processes ran with: {sys.executable}')
+        print('   A missing dependency in that interpreter is the usual cause.')
 
 
 def main():

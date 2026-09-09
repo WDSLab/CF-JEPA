@@ -222,6 +222,7 @@ def run_missing(missing, ngpu=1, datasets_file=None, hidden_dims=None, output_di
 
     default_files = {}  # cache temp files per data_type when datasets_file is None
 
+    failures = []
     for (method, data_type), seeds_needed in sorted_groups:
         n_iters = ITERATIONS
 
@@ -230,7 +231,7 @@ def run_missing(missing, ngpu=1, datasets_file=None, hidden_dims=None, output_di
         if ngpu > 1:
             cmd = ['torchrun', f'--nproc_per_node={ngpu}', 'scripts/benchmarks/run_classification.py']
         else:
-            cmd = ['python', 'scripts/benchmarks/run_classification.py']
+            cmd = [sys.executable, 'scripts/benchmarks/run_classification.py']
 
         cmd += [
             '--method', method,
@@ -254,7 +255,17 @@ def run_missing(missing, ngpu=1, datasets_file=None, hidden_dims=None, output_di
             cmd += ['--eval_csv', eval_csv]
 
         print(f"  CMD: {' '.join(cmd)}")
-        subprocess.run(cmd)
+        rc = subprocess.run(cmd).returncode
+        if rc != 0:
+            failures.append((f'{method} | {data_type}', rc))
+            print(f'  !! FAILED (exit {rc}) -- no results were written for this job')
+
+    if failures:
+        print(f'\n!! {len(failures)} job(s) failed and wrote no results:')
+        for label, rc in failures:
+            print(f'   {label}  (exit {rc})')
+        print(f'   Child processes ran with: {sys.executable}')
+        print('   A missing dependency in that interpreter is the usual cause.')
 
 
 def main():

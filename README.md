@@ -2,7 +2,7 @@
 
 Official implementation of **CF-JEPA**, a joint-embedding predictive architecture for time-series self-supervised learning, together with a unified benchmarking framework that re-evaluates 10 published baselines under a single fair-comparison protocol across **classification**, **forecasting**, and **anomaly detection**.
 
-> Paper: _Crop-based Forward Joint-Embedding Predictive Architecture for Time Series Self-Supervised Learning_ (under review).
+> Paper: _CF-JEPA: Mask-free forward prediction with asymmetric encoder utilization for time-series representation learning_ (under review).
 
 <p align="center">
   <img src="assets/OverallFramework.svg" alt="CF-JEPA overall framework" width="100%"/>
@@ -24,8 +24,8 @@ Official implementation of **CF-JEPA**, a joint-embedding predictive architectur
 | SoftCLT | ICLR 2024 | Contrastive (soft) |
 | AutoTCL | ICLR 2024 | Contrastive |
 | TimesURL | AAAI 2024 | Contrastive |
-| TS-JEPA | 2024 | JEPA |
-| FEI | 2024 | JEPA (frequency) |
+| TS-JEPA | arXiv 2025 | JEPA |
+| FEI | AAAI 2025 | JEPA (frequency) |
 | **CF-JEPA (ours)** | — | JEPA |
 
 ## Setup
@@ -112,7 +112,7 @@ The factory `baselines.get_trainer(method, input_dims, **kwargs)` instantiates t
 | Seeds | 3 (42, 43, 44) |
 | Cls eval | SVM (RBF) + SVM (Linear), maxpool + adaptive_avg pool |
 | Fcst eval | Ridge regression on causal representations |
-| Anomaly eval | k-NN + Mahalanobis scoring, delay-adjusted F1 |
+| Anomaly eval | k-NN + Gaussian scoring (`--scoring knn`, `--scoring gaussian`); delay-adjusted F1 (univariate), point-adjust F1 (multivariate) |
 
 We fix **epochs** rather than iterations so all methods see the entire training set the same number of times, regardless of dataset size.
 
@@ -141,6 +141,7 @@ CF-JEPA/
 ├── run_classification.py   # user-facing wrappers (dispatch via torchrun)
 ├── run_forecast.py
 ├── run_anomaly.py
+├── run_*.sh                # thin bash wrappers around the three above
 └── setup_baselines.sh
 ```
 
