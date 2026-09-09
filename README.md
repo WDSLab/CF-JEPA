@@ -1,6 +1,6 @@
-# CF-JEPA: Crop-based Forward Joint-Embedding Predictive Architecture
+# CF-JEPA
 
-Official implementation of **CF-JEPA**, a joint-embedding predictive architecture for time-series self-supervised learning, together with a unified benchmarking framework that re-evaluates 10 published baselines under a single fair-comparison protocol across **classification**, **forecasting**, and **anomaly detection**.
+Official implementation of **CF-JEPA** (crop-based forward JEPA), a mask-free joint-embedding predictive architecture for time-series self-supervised learning, together with a unified benchmarking framework that re-evaluates 10 published baselines under a single fair-comparison protocol across **classification**, **forecasting**, and **anomaly detection**.
 
 > Paper: _CF-JEPA: Mask-free forward prediction with asymmetric encoder utilization for time-series representation learning_ (under review).
 
