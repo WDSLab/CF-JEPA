@@ -1,7 +1,9 @@
 """
 Check and run remaining anomaly detection experiments.
 
-Checks ano_results.csv and only runs what's missing.
+Checks the result CSVs and only runs what's missing. Univariate rows live in
+results/ano_results.csv; multivariate rows (one training evaluates both scorings
+and every evaluation protocol) live in results/ano_mv_results.csv.
 
 Usage:
     python run_anomaly.py --check                              # Check status only
@@ -37,6 +39,8 @@ EXCLUDED_DEFAULT = ['simmtm']
 DATASETS_UV = ['kpi', 'yahoo']
 DATASETS_MV = ['SMD', 'MSL', 'SMAP', 'PSM']
 DATASETS = DATASETS_UV  # default = univariate (back-compat)
+UV_EVAL_CSV = 'results/ano_results.csv'
+MV_EVAL_CSV = 'results/ano_mv_results.csv'
 SCORING_METHODS = ['knn', 'gaussian']
 CHECKPOINT_EPOCHS = [50, 100, 200]
 MAX_EPOCH = 200
@@ -44,29 +48,42 @@ ITERATIONS = 3
 SEEDS = [42, 43, 44]
 
 
+def _csv_for(dataset, eval_csv=None):
+    if eval_csv is not None:
+        return eval_csv
+    return MV_EVAL_CSV if dataset in DATASETS_MV else UV_EVAL_CSV
+
+
 def _is_done(method, dataset, seed, max_epoch, scoring,
-             hidden_dims=None, repr_dims=None,
-             eval_csv='results/ano_results.csv'):
-    """Check if last checkpoint results exist in anomaly CSV."""
+             hidden_dims=None, repr_dims=None, eval_csv=None):
+    """Check if last checkpoint results exist in anomaly CSV.
+
+    `scoring='both'` (multivariate) needs knn and gaussian rows that carry a
+    `protocol` column, i.e. rows written by the current multivariate path.
+    """
+    eval_csv = _csv_for(dataset, eval_csv)
     if not os.path.exists(eval_csv):
         return False
+    need = {'knn', 'gaussian'} if scoring == 'both' else {scoring}
+    found = set()
     with open(eval_csv, newline='') as f:
         reader = csv.DictReader(f)
         for row in reader:
+            if scoring == 'both' and not row.get('protocol'):
+                continue
             if (row.get('method') == method and
                 row.get('dataset') == dataset and
                 row.get('seed') == str(seed) and
                 row.get('epoch') == str(max_epoch) and
                 row.get('hidden_dims', str(hidden_dims)) == str(hidden_dims) and
                 row.get('repr_dims', str(repr_dims)) == str(repr_dims) and
-                row.get('scoring') == scoring):
-                return True
-    return False
+                row.get('scoring') in need):
+                found.add(row['scoring'])
+    return found == need
 
 
 def check_status(methods=None, datasets=None, scoring_methods=None,
-                 hidden_dims=None, repr_dims=None,
-                 eval_csv='results/ano_results.csv'):
+                 hidden_dims=None, repr_dims=None, eval_csv=None):
     """Check which (method, dataset, scoring, seed) combos are incomplete."""
     methods = methods or METHODS
     datasets = datasets or DATASETS
@@ -78,7 +95,11 @@ def check_status(methods=None, datasets=None, scoring_methods=None,
         actual_h = hidden_dims if hidden_dims is not None else default_h
         actual_r = repr_dims if repr_dims is not None else default_r
         for dataset in datasets:
-            for scoring in scoring_methods:
+            # Multivariate: one training evaluates both scorings.
+            ds_scorings = (['both'] if dataset in DATASETS_MV
+                           and scoring_methods == SCORING_METHODS
+                           else scoring_methods)
+            for scoring in ds_scorings:
                 for seed in SEEDS:
                     if not _is_done(method, dataset, seed, MAX_EPOCH, scoring,
                                     hidden_dims=actual_h, repr_dims=actual_r,
@@ -121,8 +142,7 @@ def print_status(missing):
 
 
 def run_missing(missing, ngpu=1, hidden_dims=None, output_dims=None,
-                eval_csv='results/ano_results.csv',
-                window_size=None, anomaly_ratio=None):
+                eval_csv=None, window_size=None, anomaly_ratio=None, delay=None):
     """Run missing anomaly detection experiments."""
     # Group by (method, dataset, scoring)
     groups = {}
@@ -156,9 +176,11 @@ def run_missing(missing, ngpu=1, hidden_dims=None, output_dims=None,
             cmd += ['--hidden_dims', str(hidden_dims)]
         if output_dims is not None:
             cmd += ['--output_dims', str(output_dims)]
-        if eval_csv != 'results/ano_results.csv':
+        if eval_csv is not None:
             cmd += ['--eval_csv', eval_csv]
         if dataset in DATASETS_MV:
+            if delay is not None:
+                cmd += ['--delay', str(delay)]
             if window_size is not None:
                 cmd += ['--window_size', str(window_size)]
             if anomaly_ratio is not None:
@@ -193,6 +215,8 @@ def main():
                         help='Sliding window length for multivariate (forwarded to benchmark).')
     parser.add_argument('--anomaly_ratio', type=float, default=None,
                         help='Top-fraction threshold for multivariate (forwarded to benchmark).')
+    parser.add_argument('--delay', type=int, default=None,
+                        help='Delay tolerance for multivariate (forwarded; benchmark default 7).')
     parser.add_argument('--scoring', type=str, default=None,
                         choices=['knn', 'gaussian'],
                         help='Specific scoring method only')
@@ -205,8 +229,9 @@ def main():
     parser.add_argument('--checkpoint_epochs', type=str, default='50,100,200',
                         help='Comma-separated checkpoint epochs (default: 50,100,200). '
                              'Use "100" alone for a single-checkpoint run.')
-    parser.add_argument('--eval_csv', type=str, default='results/ano_results.csv',
-                        help='Output CSV path (default: results/ano_results.csv).')
+    parser.add_argument('--eval_csv', type=str, default=None,
+                        help=f'Output CSV path (default: {UV_EVAL_CSV} for univariate, '
+                             f'{MV_EVAL_CSV} for multivariate).')
     args = parser.parse_args()
 
     global ITERATIONS, SEEDS, CHECKPOINT_EPOCHS, MAX_EPOCH
@@ -252,7 +277,8 @@ def main():
     run_missing(missing, args.ngpu,
                 hidden_dims=args.hidden_dims, output_dims=args.output_dims,
                 eval_csv=args.eval_csv,
-                window_size=args.window_size, anomaly_ratio=args.anomaly_ratio)
+                window_size=args.window_size, anomaly_ratio=args.anomaly_ratio,
+                delay=args.delay)
 
     # Re-check
     print("\n\n>>> Final status:")

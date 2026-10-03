@@ -72,7 +72,7 @@ python run_forecast.py --method cf_jepa --datasets ETTh1 ETTh2 ETTm1 ETTm2
 # Univariate (KPI, Yahoo) — delay-adjusted F1, mean+4sigma threshold
 python run_anomaly.py --method cf_jepa --scoring knn
 
-# Multivariate (SMD, MSL, SMAP, PSM) — point-adjust F1, top-quantile threshold
+# Multivariate (SMD, MSL, SMAP, PSM) — same protocol (delay 7); one training scores both k-NN and Gaussian
 python run_anomaly.py --multivariate --ngpu 2
 
 # Both
@@ -87,7 +87,7 @@ python run_forecast.py --check
 python run_anomaly.py --check
 ```
 
-Each run writes to `results/{cls,fcst,ano}_results.csv`. Resume logic skips any (method, dataset, seed, epoch) tuple already present.
+Each run writes to `results/{cls,fcst,ano}_results.csv` (multivariate anomaly detection: `results/ano_mv_results.csv`, one row per evaluation protocol; the paper uses `delay_train4sigma`). Resume logic skips any (method, dataset, seed, epoch) tuple already present.
 
 ## Architecture
 
@@ -112,7 +112,7 @@ The factory `baselines.get_trainer(method, input_dims, **kwargs)` instantiates t
 | Seeds | 3 (42, 43, 44) |
 | Cls eval | SVM (RBF) + SVM (Linear), maxpool + adaptive_avg pool |
 | Fcst eval | Ridge regression on causal representations |
-| Anomaly eval | k-NN + Gaussian scoring (`--scoring knn`, `--scoring gaussian`); delay-adjusted F1 (univariate), point-adjust F1 (multivariate) |
+| Anomaly eval | k-NN + Gaussian scoring (`--scoring knn`, `--scoring gaussian`); delay-adjusted F1 with a training-statistics threshold (mean + 4σ) for both univariate (delay 7 for KPI, 3 for Yahoo) and multivariate (delay 7) benchmarks; point adjustment is not used |
 
 We fix **epochs** rather than iterations so all methods see the entire training set the same number of times, regardless of dataset size.
 

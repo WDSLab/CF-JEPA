@@ -7,6 +7,7 @@ Approach:
     3. Score anomalies using representation-based methods (knn, gaussian)
     4. Threshold on training scores (mean + 4*std)
     5. Evaluate with delay-adjusted F1/Precision/Recall
+       (multivariate: same protocol plus comparison variants, see eval_mv_protocols)
 
 Usage:
     python scripts/benchmarks/run_anomaly.py --method ts2vec --dataset kpi --epochs 200 --iterations 3
@@ -427,6 +428,74 @@ def _threshold_by_ratio(scores, ratio):
     return float(np.quantile(scores, 1.0 - ratio))
 
 
+def _suppress_within_delay(pred, delay):
+    """Drop a detection if another one fired within the preceding `delay` steps.
+
+    Same sequential rule as the univariate path (`run_anomaly_checkpoint`).
+    """
+    pred = pred.copy()
+    for i in range(len(pred)):
+        if i >= delay and pred[i - delay:i].sum() >= 1:
+            pred[i] = 0
+    return pred
+
+
+def _prf(pred, label):
+    from sklearn.metrics import f1_score, precision_score, recall_score
+    if label.sum() == 0 or pred.sum() == 0:
+        return {'f1': 0.0, 'precision': 0.0, 'recall': 0.0}
+    return {
+        'f1': f1_score(label, pred),
+        'precision': precision_score(label, pred),
+        'recall': recall_score(label, pred),
+    }
+
+
+def eval_mv_protocols(train_scores, test_scores, test_label, anomaly_ratio, delay,
+                      extra_delays=()):
+    """Score one (T_test,) sequence under every multivariate protocol.
+
+    Point adjustment overstates performance (Kim et al., AAAI 2022), so the
+    multivariate benchmarks are evaluated with the univariate protocol
+    (`delay_train4sigma`, used in the paper). All variants come from the same
+    scores, so no retraining is needed to compare protocols.
+
+        delay_train4sigma  univariate protocol: train mean+4std threshold,
+                           detection suppression, delay-adjusted F1
+        delay_ratio        top-`anomaly_ratio` threshold, then the same delay step
+        point_train4sigma  train mean+4std threshold, unadjusted point-wise F1
+        point_ratio        top-`anomaly_ratio` threshold, unadjusted point-wise F1
+        pa_ratio           previous paper protocol (point-adjust); sanity check only
+
+    Returns a list of (protocol, delay, metrics). All five protocols are scored at
+    the primary `delay`; the two delay-dependent ones are also scored at each of
+    `extra_delays` (delay-sensitivity check, e.g. Yahoo's 3).
+    """
+    label = np.asarray(test_label).astype(np.int64)
+    thr_sigma = np.mean(train_scores) + 4 * np.std(train_scores)
+    thr_ratio = _threshold_by_ratio(np.concatenate([train_scores, test_scores]),
+                                    anomaly_ratio)
+    pred_sigma = (test_scores > thr_sigma).astype(np.int64)
+    pred_ratio = (test_scores > thr_ratio).astype(np.int64)
+
+    def _delay(pred, d):
+        return get_range_proba(_suppress_within_delay(pred, d), label, d)
+
+    out = [
+        ('delay_train4sigma', delay, _prf(_delay(pred_sigma, delay), label)),
+        ('delay_ratio', delay, _prf(_delay(pred_ratio, delay), label)),
+        ('point_train4sigma', delay, _prf(pred_sigma, label)),
+        ('point_ratio', delay, _prf(pred_ratio, label)),
+        ('pa_ratio', delay, eval_pa_f1(pred_ratio, label)),
+    ]
+    for d in extra_delays:
+        if d == delay:
+            continue
+        out.append(('delay_train4sigma', d, _prf(_delay(pred_sigma, d), label)))
+        out.append(('delay_ratio', d, _prf(_delay(pred_ratio, d), label)))
+    return out
+
+
 # Default anomaly ratios per dataset (Anomaly-Transformer / DCdetector convention).
 MV_ANOMALY_RATIO = {
     'SMD': 0.005,
@@ -434,6 +503,18 @@ MV_ANOMALY_RATIO = {
     'SMAP': 0.01,
     'PSM': 0.01,
 }
+
+# Delay tolerance for the multivariate benchmarks. All four are sampled at
+# one-minute resolution, so they take KPI's value (Yahoo is hourly, delay 3).
+# MV_EXTRA_DELAYS are recorded alongside for a delay-sensitivity check only.
+MV_DELAY = 7
+MV_EXTRA_DELAYS = (3,)
+
+# Multivariate results go to their own CSV (with a `protocol` column) so the
+# univariate / crop rows in results/ano_results.csv are never mixed in.
+MV_EVAL_CSV = 'results/ano_mv_results.csv'
+MV_FIELDNAMES = ['method', 'dataset', 'seed', 'epoch', 'hidden_dims', 'repr_dims',
+                 'scoring', 'protocol', 'delay', 'f1', 'precision', 'recall']
 
 
 # =============================================================================
@@ -682,8 +763,9 @@ def run_anomaly_checkpoint(method, dataset_name, max_epochs=200,
 def run_anomaly_mv_checkpoint(method, dataset_name, max_epochs=200,
                               checkpoint_epochs=None, device='cuda',
                               local_rank=-1, seed=42, hidden_dims=None,
-                              repr_dims=None, scoring='knn', eval_csv=None,
-                              window_size=100, anomaly_ratio=None,
+                              repr_dims=None, scorings=('knn', 'gaussian'),
+                              eval_csv=None, window_size=100, anomaly_ratio=None,
+                              delay=MV_DELAY, extra_delays=MV_EXTRA_DELAYS,
                               **method_kwargs):
     """Multivariate anomaly pipeline (SMD / MSL / SMAP / PSM).
 
@@ -691,18 +773,19 @@ def run_anomaly_mv_checkpoint(method, dataset_name, max_epochs=200,
         1. Load (T_train, D) + (T_test, D) + (T_test,) label
         2. Split train into non-overlapping windows of `window_size`
         3. Pre-train encoder on windows
-        4. At each checkpoint: encode test full sequence -> knn/gaussian score
-           -> threshold by top `anomaly_ratio` fraction -> point-adjust F1
-        5. Save to CSV; auto-emit f'{method}_target' row for cf_jepa_* methods
+        4. At each checkpoint: encode train+test once, then for every scoring
+           function write one row per protocol (see `eval_mv_protocols`)
+        5. Save to MV_EVAL_CSV; auto-emit f'{method}_target' rows for cf_jepa
 
+    All scorings share one training run (the encoder does not depend on the score).
     `anomaly_ratio` defaults to `MV_ANOMALY_RATIO[dataset_name]` (Anomaly-Transformer
-    convention). Threshold is computed on TEST scores' quantile, matching DCdetector
-    and TimesNet-AD.
+    convention) and only affects the *_ratio protocols.
     """
     if checkpoint_epochs is None:
         checkpoint_epochs = [50, 100, 200]
     if anomaly_ratio is None:
         anomaly_ratio = MV_ANOMALY_RATIO.get(dataset_name, 0.01)
+    scorings = list(scorings)
 
     set_seed(seed)
     rank0 = is_main_process()
@@ -710,11 +793,11 @@ def run_anomaly_mv_checkpoint(method, dataset_name, max_epochs=200,
     if rank0:
         print(f"\n{'='*60}")
         print(f"Anomaly Detection (multivariate): {dataset_name}")
-        print(f"Method: {method} | Scoring: {scoring}")
+        print(f"Method: {method} | Scoring: {scorings}")
         print(f"Checkpoints: {checkpoint_epochs}")
         print(f"Seed: {seed} | Device: {device}")
         print(f"Hidden dims: {hidden_dims} | Repr dims: {repr_dims}")
-        print(f"Window: {window_size} | Anomaly ratio: {anomaly_ratio}")
+        print(f"Window: {window_size} | Anomaly ratio: {anomaly_ratio} | Delay: {delay}")
         print(f"{'='*60}")
 
     train_x, test_x, test_label = load_anomaly_mv(dataset_name)
@@ -737,7 +820,7 @@ def run_anomaly_mv_checkpoint(method, dataset_name, max_epochs=200,
                           dataset=dataset_name, **method_kwargs)
 
     if eval_csv is None:
-        eval_csv = 'results/ano_results.csv'
+        eval_csv = MV_EVAL_CSV
     os.makedirs(os.path.dirname(eval_csv) or '.', exist_ok=True)
 
     loss_log = []
@@ -749,23 +832,38 @@ def run_anomaly_mv_checkpoint(method, dataset_name, max_epochs=200,
         return 0.0
     max_checkpoint = sorted_checkpoints[-1]
     checkpoint_set = set(sorted_checkpoints)
-    scoring_fn = SCORING_METHODS[scoring]
 
-    def _score_and_eval(tr, use_target=False):
-        """Encode train+test, compute scores, threshold by ratio, return PA-F1."""
+    def _score_and_eval(tr, ep, row_method, use_target=False):
+        """Encode train+test once; append one row per (scoring, protocol)."""
         full = np.concatenate([train_x, test_x], axis=0)
         full_repr = encode_long_sequence_mv(tr, full, use_target=use_target)
         if full_repr.ndim == 1:
-            return None  # pooled-only method (e.g. SimMTM) — skip
+            return False  # pooled-only method (e.g. SimMTM) — skip
         train_repr = full_repr[:T_train]
         test_repr = full_repr[T_train:T_train + T_test]
-        train_scores, test_scores = scoring_fn(train_repr, test_repr)
-        # Anomaly-Transformer / DCdetector threshold: top `anomaly_ratio` of combined
-        # train+test scores. Use ratio so this is dataset-tunable.
-        combined = np.concatenate([train_scores, test_scores])
-        thr = _threshold_by_ratio(combined, anomaly_ratio)
-        test_pred = (test_scores > thr).astype(np.int64)
-        return eval_pa_f1(test_pred, test_label)
+        for scoring in scorings:
+            train_scores, test_scores = SCORING_METHODS[scoring](train_repr, test_repr)
+            results = eval_mv_protocols(train_scores, test_scores, test_label,
+                                        anomaly_ratio, delay, extra_delays)
+            for protocol, d, m in results:
+                eval_results.append({
+                    'method': row_method,
+                    'dataset': dataset_name,
+                    'seed': seed,
+                    'epoch': ep,
+                    'hidden_dims': hidden_dims,
+                    'repr_dims': repr_dims,
+                    'scoring': scoring,
+                    'protocol': protocol,
+                    'delay': d,
+                    'f1': round(m['f1'], 4),
+                    'precision': round(m['precision'], 4),
+                    'recall': round(m['recall'], 4),
+                })
+            if rank0:
+                summary = '  '.join(f"{p}@{d}={m['f1']:.4f}" for p, d, m in results)
+                print(f"    [{row_method} | {scoring}] {summary}")
+        return True
 
     def _epoch_callback(tr, ep, loss):
         loss_log.append((ep, loss))
@@ -774,27 +872,10 @@ def run_anomaly_mv_checkpoint(method, dataset_name, max_epochs=200,
         if rank0:
             print(f"\n  [Checkpoint] Encoding and scoring at epoch {ep}...")
 
-        metrics = _score_and_eval(tr, use_target=False)
-        if metrics is None:
+        if not _score_and_eval(tr, ep, method, use_target=False):
             if rank0:
                 print(f"    Skipped (pooled-only method)")
             return
-
-        eval_results.append({
-            'method': method,
-            'dataset': dataset_name,
-            'seed': seed,
-            'epoch': ep,
-            'hidden_dims': hidden_dims,
-            'repr_dims': repr_dims,
-            'scoring': scoring,
-            'f1': round(metrics['f1'], 4),
-            'precision': round(metrics['precision'], 4),
-            'recall': round(metrics['recall'], 4),
-        })
-        if rank0:
-            print(f"    F1={metrics['f1']:.4f}  P={metrics['precision']:.4f}  "
-                  f"R={metrics['recall']:.4f}")
 
         # Dual-encoder eval — mirror of the univariate path.
         if (method.startswith('cf_jepa')
@@ -802,23 +883,7 @@ def run_anomaly_mv_checkpoint(method, dataset_name, max_epochs=200,
                 and tr.target_encoder is not None):
             if rank0:
                 print(f"  [Dual eval] Re-encoding with target encoder...")
-            metrics_t = _score_and_eval(tr, use_target=True)
-            if metrics_t is not None:
-                eval_results.append({
-                    'method': f'{method}_target',
-                    'dataset': dataset_name,
-                    'seed': seed,
-                    'epoch': ep,
-                    'hidden_dims': hidden_dims,
-                    'repr_dims': repr_dims,
-                    'scoring': scoring,
-                    'f1': round(metrics_t['f1'], 4),
-                    'precision': round(metrics_t['precision'], 4),
-                    'recall': round(metrics_t['recall'], 4),
-                })
-                if rank0:
-                    print(f"    [target] F1={metrics_t['f1']:.4f}  "
-                          f"P={metrics_t['precision']:.4f}  R={metrics_t['recall']:.4f}")
+            _score_and_eval(tr, ep, f'{method}_target', use_target=True)
 
         import gc; gc.collect()
 
@@ -830,11 +895,9 @@ def run_anomaly_mv_checkpoint(method, dataset_name, max_epochs=200,
     train_time = time.time() - t_start
 
     if eval_results:
-        fieldnames = ['method', 'dataset', 'seed', 'epoch', 'hidden_dims', 'repr_dims',
-                      'scoring', 'f1', 'precision', 'recall']
         file_exists = os.path.exists(eval_csv)
         with open(eval_csv, 'a', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer = csv.DictWriter(f, fieldnames=MV_FIELDNAMES)
             if not file_exists:
                 writer.writeheader()
             writer.writerows(eval_results)
@@ -859,21 +922,29 @@ def run_anomaly_mv_checkpoint(method, dataset_name, max_epochs=200,
 def _is_anomaly_done(method, dataset, seed, max_epoch, scoring='knn',
                      hidden_dims=None, repr_dims=None,
                      eval_csv='results/ano_results.csv'):
-    """Check if last checkpoint results exist in anomaly CSV."""
+    """Check if last checkpoint results exist in anomaly CSV.
+
+    `scoring='both'` (multivariate) requires knn and gaussian rows, and only
+    counts rows carrying a `protocol` column (i.e. written by the current MV path).
+    """
     if not os.path.exists(eval_csv):
         return False
+    need = {'knn', 'gaussian'} if scoring == 'both' else {scoring}
+    found = set()
     with open(eval_csv, newline='') as f:
         reader = csv.DictReader(f)
         for row in reader:
+            if scoring == 'both' and not row.get('protocol'):
+                continue
             if (row.get('method') == method and
                 row.get('dataset') == dataset and
                 row.get('seed') == str(seed) and
                 row.get('epoch') == str(max_epoch) and
                 row.get('hidden_dims', str(hidden_dims)) == str(hidden_dims) and
                 row.get('repr_dims', str(repr_dims)) == str(repr_dims) and
-                row.get('scoring') == scoring):
-                return True
-    return False
+                row.get('scoring') in need):
+                found.add(row['scoring'])
+    return found == need
 
 
 def main():
@@ -883,15 +954,26 @@ def main():
                         help='Anomaly dataset name (kpi, yahoo)')
     parser.add_argument('--epochs', type=int, default=200)
     parser.add_argument('--iterations', type=int, default=3)
-    parser.add_argument('--scoring', type=str, default='knn',
-                        choices=['knn', 'gaussian'],
-                        help='Anomaly scoring method')
+    parser.add_argument('--seeds', type=str, default=None,
+                        help='Comma-separated seeds to run (e.g. "44"); overrides --iterations.')
+    parser.add_argument('--scoring', type=str, default=None,
+                        choices=['knn', 'gaussian', 'both'],
+                        help='Anomaly scoring method. Default: knn (univariate), '
+                             'both (multivariate; one training, both scorings).')
     parser.add_argument('--checkpoint_epochs', type=str, default='50,100,200',
                         help='Comma-separated checkpoint epochs')
     parser.add_argument('--hidden_dims', type=int, default=None)
     parser.add_argument('--output_dims', type=int, default=None)
-    parser.add_argument('--eval_csv', type=str, default='results/ano_results.csv',
-                        help='Output CSV path (default: results/ano_results.csv).')
+    parser.add_argument('--eval_csv', type=str, default=None,
+                        help='Output CSV path (default: results/ano_results.csv for '
+                             f'univariate, {MV_EVAL_CSV} for multivariate).')
+    parser.add_argument('--delay', type=int, default=MV_DELAY,
+                        help=f'Delay tolerance for multivariate datasets (default {MV_DELAY}). '
+                             'Univariate delays come from the dataset pickle.')
+    parser.add_argument('--extra_delays', type=str,
+                        default=','.join(str(d) for d in MV_EXTRA_DELAYS),
+                        help='Additional delay tolerances recorded for the delay-dependent '
+                             'multivariate protocols (sensitivity check). "" disables.')
     parser.add_argument('--window_size', type=int, default=100,
                         help='Sliding window length for multivariate datasets only (default 100, '
                              'Anomaly-Transformer convention).')
@@ -899,6 +981,14 @@ def main():
                         help='Top-fraction threshold for multivariate datasets only. '
                              'Defaults to MV_ANOMALY_RATIO[dataset] (SMD=0.005, others=0.01).')
     args = parser.parse_args()
+
+    is_mv = args.dataset in ANOMALY_MV_DATASETS
+    if args.scoring is None:
+        args.scoring = 'both' if is_mv else 'knn'
+    if args.scoring == 'both' and not is_mv:
+        parser.error('--scoring both is only supported for multivariate datasets')
+    if args.eval_csv is None:
+        args.eval_csv = MV_EVAL_CSV if is_mv else 'results/ano_results.csv'
 
     checkpoint_epochs = [int(x) for x in args.checkpoint_epochs.split(',')]
     max_epoch = max(checkpoint_epochs)
@@ -919,6 +1009,9 @@ def main():
     # Anomaly datasets: each dataset is a single unit (not parallelizable like classification)
     # Multi-GPU parallelism applies across methods/seeds, not within a dataset
     seeds = [42, 43, 44]
+    if args.seeds:
+        seeds = [int(s) for s in args.seeds.split(',')]
+        args.iterations = len(seeds)
 
     for iteration in range(1, args.iterations + 1):
         seed = seeds[iteration - 1] if iteration <= len(seeds) else 42 + iteration - 1
@@ -939,15 +1032,19 @@ def main():
             continue
 
         try:
-            if args.dataset in ANOMALY_MV_DATASETS:
+            if is_mv:
                 run_anomaly_mv_checkpoint(
                     method=args.method, dataset_name=args.dataset,
                     max_epochs=max_epoch, checkpoint_epochs=checkpoint_epochs,
                     device=device, local_rank=local_rank, seed=seed,
                     hidden_dims=actual_hidden, repr_dims=actual_repr,
-                    scoring=args.scoring, eval_csv=args.eval_csv,
+                    scorings=(['knn', 'gaussian'] if args.scoring == 'both'
+                              else [args.scoring]),
+                    eval_csv=args.eval_csv,
                     window_size=args.window_size,
                     anomaly_ratio=args.anomaly_ratio,
+                    delay=args.delay,
+                    extra_delays=tuple(int(x) for x in args.extra_delays.split(',') if x.strip()),
                     **method_kwargs,
                 )
             else:
