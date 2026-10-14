@@ -1,7 +1,7 @@
 """AutoTCL trainer wrapper.
 
-Unified TS2Vec backbone across cls / fcst / ano (2026-05-29 fairness unification)
-------------------------------------------------------------------------------
+Unified TS2Vec backbone across cls / fcst / ano (fairness unification)
+----------------------------------------------------------------------
 Originally the wrapper followed paper's task-specific backbones:
   * Forecasting → CoST-no-SFD (paper Sec 4.1 main)
   * Classification → TS2Vec dilated CNN (paper Sec 4.2 main)

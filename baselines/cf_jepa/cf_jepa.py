@@ -23,7 +23,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-# Optuna-tuned hyperparameters (2026-04-02, HARD13, n_bins=8).
+# Optuna-tuned hyperparameters (13 hard UCR datasets, n_bins=8).
 # NOTE: enc_depth in this dict is overwritten by the trainer's `depth=5`
 # default (CFJEPATrainer.__init__) — depth=5 is the value actually used in
 # all experiments. The values below reflect the trainer-applied configuration.
