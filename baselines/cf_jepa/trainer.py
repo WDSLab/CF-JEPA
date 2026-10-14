@@ -11,6 +11,8 @@ zone-conditional linear predictor per zone against the EMA target encoder,
 with a horizon-annealed weight of 1 - epoch / total_epochs.
 """
 
+import sys
+
 import numpy as np
 import copy
 import torch
@@ -50,6 +52,13 @@ class CFJEPATrainer:
         )
         if lr is not None:
             self.params['lr'] = lr
+        # Extra kwargs override PARAMS_* entries. Anything else would be dropped
+        # silently, so say so ('dataset' is passed to every trainer by the runners).
+        unknown = sorted(k for k in kwargs if k not in self.params and k != 'dataset')
+        if unknown:
+            print(f"[CFJEPATrainer] ignoring unknown kwargs {unknown}; "
+                  f"add them to PARAMS_128/PARAMS_320 to make them take effect",
+                  file=sys.stderr)
         for k, v in kwargs.items():
             if k in self.params:
                 self.params[k] = v

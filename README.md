@@ -118,7 +118,7 @@ We fix **epochs** rather than iterations so all methods see the entire training 
 
 ## Multi-GPU
 
-Dataset-parallel via `torchrun` with dynamic queue distribution: each GPU grabs the next available dataset via an `fcntl` file-lock counter (not a static split). NCCL on Linux/CUDA, Gloo on Windows or CPU.
+Dataset-parallel via `torchrun` with dynamic queue distribution: each GPU grabs the next available dataset via a file-locked counter (`fcntl` on Linux, `msvcrt` on Windows; not a static split). Backend: Gloo. Anomaly detection runs one dataset per call and splits its seeds across GPUs instead. If a job fails, the runner continues with the remaining jobs and exits with code 1 at the end; the launchers list the failed jobs.
 
 ```bash
 python run_classification.py --ngpu 4 --datasets_file splits/datasets_ucr_t1.txt
@@ -135,7 +135,8 @@ CF-JEPA/
 │   └── cf_jepa/            # self-contained: encoder, predictor, losses, trainer
 ├── scripts/
 │   └── benchmarks/         # paper main entry points (cls / fcst / ano)
-├── utils/                  # data loaders, helpers
+├── utils/                  # data loaders, runner plumbing, anomaly scoring/metrics
+├── tests/                  # unit tests: python -m unittest discover -s tests (no GPU)
 ├── splits/                 # dataset subset files (fast → slow ordering)
 ├── config.py               # data root paths
 ├── run_classification.py   # user-facing wrappers (dispatch via torchrun)

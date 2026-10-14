@@ -1,7 +1,7 @@
 #!/bin/bash
 # ============================================================
 # Run classification experiments (checkpoint mode)
-# Checks for existing raw.npz files and only runs what's missing
+# Checks results/cls_results.csv and only runs what's missing
 #
 # Usage:
 #   bash run_classification.sh --check                                    # Check status
