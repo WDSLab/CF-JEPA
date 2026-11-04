@@ -12,13 +12,12 @@ Loss resolution
 The callback is invoked with the current epoch's training loss. We resolve
 the value in this order:
 
-1. ``model._last_epoch_loss`` if upstream explicitly publishes it.
-2. Frame walk: search the call stack for a local ``loss_log`` list (the
+1. Frame walk: search the call stack for a local ``loss_log`` list (the
    pattern all three upstream ``fit()`` methods use) and return its last
    element. T-Rep appends before ``n_epochs += 1`` so this yields the
    current epoch's loss exactly; AutoTCL/InfoTS append after the increment,
    so this yields the previous epoch's loss (one-epoch lag).
-3. ``0.0`` as a last-resort default.
+2. ``0.0`` as a last-resort default.
 
 Usage
 -----
@@ -58,9 +57,6 @@ def install_epoch_hook(model):
 
 def _resolve_epoch_loss(model):
     """Return the most recent epoch loss; see module docstring."""
-    explicit = model.__dict__.get('_last_epoch_loss')
-    if explicit is not None:
-        return explicit
     # Walk up the stack: this fn (0) -> __setattr__ (1) -> upstream caller (2+).
     # All three upstream fit() loops maintain a local ``loss_log`` list.
     frame = sys._getframe(2)

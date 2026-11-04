@@ -142,7 +142,6 @@ CF-JEPA/
 ├── run_classification.py   # user-facing wrappers (dispatch via torchrun)
 ├── run_forecast.py
 ├── run_anomaly.py
-├── run_*.sh                # thin bash wrappers around the three above
 └── setup_baselines.sh
 ```
 

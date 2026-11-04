@@ -22,10 +22,6 @@ class AutoTCLTrainer:
     def __init__(self, input_dims, output_dims=320, hidden_dims=64, depth=10,
                  device='cuda', lr=1e-3, batch_size=16,
                  max_train_length=None, **kwargs):
-        # forecast_mode kwarg accepted for backward compatibility with runner
-        # call sites, but ignored — single unified config across cls/fcst/ano.
-        kwargs.pop("forecast_mode", None)
-
         self.output_dims = output_dims
         self.max_train_length = max_train_length
 
@@ -35,7 +31,6 @@ class AutoTCLTrainer:
         gamma_zeta = kwargs.pop("gamma_zeta", 0.05)
         augmask_mode = kwargs.pop("augmask_mode", "binomial")
         hard_mask = kwargs.pop("hard_mask", True)
-        self._fit_kwargs = {}
 
         self._model = AutoTCL(
             input_dims=input_dims, output_dims=output_dims,
@@ -92,8 +87,7 @@ class AutoTCLTrainer:
         # n_epochs hook installed in __init__.
         self._callback = callback
         target = self._model.n_epochs + epochs
-        self._model.fit(train_data, n_epochs=target, valid_dataset=None,
-                        **self._fit_kwargs)
+        self._model.fit(train_data, n_epochs=target, valid_dataset=None)
         self._callback = None
         return self
 

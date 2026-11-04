@@ -47,9 +47,6 @@ def _patch_infots_small_batch(model):
     model._unsup_pred_dim = model.batch_size
     model._output_dims = model.unsup_pred.in_features
 
-    original_meta_fit = model.meta_fit
-    original_super_fit = model.super_fit
-
     def _get_unsup_pred(bs):
         if model._unsup_pred_dim != bs:
             model.unsup_pred = nn.Linear(model._output_dims, bs).to(model.device)

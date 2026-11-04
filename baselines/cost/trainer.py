@@ -22,7 +22,6 @@ class CoSTTrainer:
         # random window is sampled per batch. BandedFourierLayer weights are
         # sized to max_train_length, so this also caps Fourier capacity.
         self.max_train_length = max_train_length
-        self._max_train_length = max_train_length  # legacy alias used in _build_model
 
         # Save params for lazy model creation in fit() (need T for max_train_length)
         self._init_kwargs = dict(
@@ -40,10 +39,10 @@ class CoSTTrainer:
         # than weights expect → einsum mismatch. So cap mtl at T as well as the user
         # value: long datasets get chunked into max_train_length pieces, short
         # datasets get weights sized to their actual length.
-        if self._max_train_length is None:
+        if self.max_train_length is None:
             mtl = T
         else:
-            mtl = min(self._max_train_length, T)
+            mtl = min(self.max_train_length, T)
         self._model = CoST(
             **self._init_kwargs,
             max_train_length=mtl,

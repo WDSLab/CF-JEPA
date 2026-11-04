@@ -51,11 +51,6 @@ class SoftCLTTrainer:
         soft_temporal = tau_temp > 0
         self._tau_inst = tau_inst
         self._soft_instance = soft_instance
-        # DTW soft-label normalization axis for multivariate (N,T,C) input.
-        # Default 1 (=time axis, matches upstream normalize_TS). Exposed only so
-        # the axis-treatment diagnostic can reproduce the prior axis=2 (channel)
-        # behavior; production always uses 1.
-        self._dtw_norm_axis = kwargs.get('dtw_norm_axis', 1)
 
         self._model = TS2Vec(
             input_dims=input_dims, output_dims=output_dims,
@@ -76,12 +71,10 @@ class SoftCLTTrainer:
             self._callback(self, self._epoch_counter, cum_loss)
 
     @staticmethod
-    def _compute_sim_mat(train_data, norm_axis=1):
+    def _compute_sim_mat(train_data):
         """Compute DTW similarity matrix (normalized to [0,1]) for instance-wise soft CL.
 
         Follows original SoftCLT pipeline: normalize → DTW → MinMaxScale → 1 - dist.
-        norm_axis controls the multivariate min-max axis (1=time=correct/default;
-        2=channel reproduces the prior wrapper bug — diagnostic only).
         """
         from tslearn.metrics import dtw
         from sklearn.preprocessing import MinMaxScaler
@@ -100,8 +93,8 @@ class SoftCLTTrainer:
             # so the time axis is axis=1 (NOT axis=2, which would min-max across
             # channels per timestep and corrupt the DTW instance similarity).
             X = np.nan_to_num(train_data, nan=0.0)
-            xmax = X.max(axis=norm_axis, keepdims=True)
-            xmin = X.min(axis=norm_axis, keepdims=True)
+            xmax = X.max(axis=1, keepdims=True)
+            xmin = X.min(axis=1, keepdims=True)
             X = (X - xmin) / (xmax - xmin + 1e-6)
 
         N = len(X)
@@ -139,8 +132,7 @@ class SoftCLTTrainer:
         use_instance = self._soft_instance and N > 1 and T <= 5000
         if use_instance:
             if not hasattr(self, '_cached_sim_mat') or self._cached_sim_mat is None:
-                self._cached_sim_mat = self._compute_sim_mat(
-                    train_data, norm_axis=self._dtw_norm_axis)
+                self._cached_sim_mat = self._compute_sim_mat(train_data)
             sim_mat = self._cached_sim_mat
             # densify: convert similarity → soft assignment
             alpha = 0.5

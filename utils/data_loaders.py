@@ -1,8 +1,6 @@
 import os
 import numpy as np
 import pandas as pd
-from datetime import datetime
-import pickle
 from utils.helpers import pkl_load, pad_nan_to_target
 from scipy.io.arff import loadarff
 from sklearn.preprocessing import StandardScaler
@@ -107,26 +105,6 @@ def load_UEA(dataset):
     return train_X, train_y, test_X, test_y
     
     
-def _get_time_features(dt):
-    """Extract time features (compatible across recent pandas/numpy versions)."""
-    try:
-        # Recent pandas: use isocalendar().week instead of weekofyear
-        week_feature = dt.isocalendar().week.to_numpy()
-    except AttributeError:
-        # Older pandas: weekofyear
-        week_feature = dt.weekofyear.to_numpy()
-    
-    return np.stack([
-        dt.minute.to_numpy(),
-        dt.hour.to_numpy(),
-        dt.dayofweek.to_numpy(),
-        dt.day.to_numpy(),
-        dt.dayofyear.to_numpy(),
-        dt.month.to_numpy(),
-        week_feature,
-    ], axis=1).astype(np.float64)
-
-
 def load_forecast_csv(name, univar=False):
     data = pd.read_csv(os.path.join(FORECAST_PATH, f'{name}.csv'), index_col='date', parse_dates=True)
     n_covariate_cols = 0
@@ -134,8 +112,6 @@ def load_forecast_csv(name, univar=False):
     if univar:
         if name in ('ETTh1', 'ETTh2', 'ETTm1', 'ETTm2'):
             data = data[['OT']]
-        elif name == 'electricity':
-            data = data[['MT_001']]
         else:
             data = data.iloc[:, -1:]
         
@@ -155,10 +131,7 @@ def load_forecast_csv(name, univar=False):
     
     scaler = StandardScaler().fit(data[train_slice])
     data = scaler.transform(data)
-    if name in ('electricity'):
-        data = np.expand_dims(data.T, -1)  # Each variable is an instance rather than a feature
-    else:
-        data = np.expand_dims(data, 0)
+    data = np.expand_dims(data, 0)
     
     if name in ('ETTh1', 'ETTh2'):
         pred_lens = [24, 48, 168, 336, 720]

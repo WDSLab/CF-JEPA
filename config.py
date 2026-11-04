@@ -11,7 +11,7 @@ DATA_ROOT = os.path.join(os.path.dirname(__file__), 'data')
 UCR_PATH = os.path.join(DATA_ROOT, 'UCR')
 UEA_PATH = os.path.join(DATA_ROOT, 'UEA')
 
-# Forecasting (ETTh1.csv, ETTm1.csv, electricity.csv, weather.csv, etc.)
+# Forecasting (ETTh1.csv, ETTm1.csv, weather.csv, etc.)
 FORECAST_PATH = os.path.join(DATA_ROOT, 'forecast')
 
 # Anomaly detection
