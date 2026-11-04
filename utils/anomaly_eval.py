@@ -184,7 +184,7 @@ def eval_ad_result(test_pred_list, test_labels_list, test_timestamps_list, delay
 
 
 def eval_pa_f1(test_pred, test_label):
-    """Point-adjust F1 (the previous SMD/MSL/SMAP/PSM protocol).
+    """Point-adjust F1 (OmniAnomaly convention).
 
     Convention from OmniAnomaly: if any timestep within a ground-truth anomaly
     segment is predicted as positive, the entire segment is marked as detected.

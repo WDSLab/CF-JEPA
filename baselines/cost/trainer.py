@@ -98,11 +98,8 @@ class CoSTTrainer:
         else:
             chunk_specs = [(0, T)]
 
-        # CRITICAL: self._model.net is shared with self._model.cost (training module
-        # holds self.net as encoder_q at cost.py:234). Setting eval here without
-        # restoring causes CoST training (cost.py:286-322 has no .train() call) to
-        # continue in eval mode after first mid-training encode. Save/restore is
-        # required under the continuous-fit pipeline.
+        # net is shared with the training module (cost.py:234) and CoST's fit()
+        # never calls .train(), so restore the mode after encoding.
         was_training = self._model.net.training
         self._model.net.eval()
         encode_batch = getattr(self._model, 'batch_size', 64) or 64

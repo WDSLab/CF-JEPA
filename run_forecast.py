@@ -121,7 +121,7 @@ def main():
     if args.check:
         return
     if not missing:
-        print("\nNothing to run!")
+        print("\nNothing to run.")
         return
     print(f"\n>>> Running {len(missing)} missing forecast jobs...")
     run_missing(missing, args, checkpoint_epochs)

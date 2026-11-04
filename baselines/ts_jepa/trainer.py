@@ -2,7 +2,7 @@
 TS-JEPA trainer wrapper.
 
 Wraps the Encoder and Predictor from TS_JEPA to expose the unified
-cf_jepa trainer interface.  Pre-trains a JEPA (Joint-Embedding
+trainer interface.  Pre-trains a JEPA (Joint-Embedding
 Predictive Architecture) with patch-level masking and EMA target encoder.
 """
 
@@ -87,7 +87,6 @@ class TSJEPATrainer:
         self.actual_patch_size = None
         self.num_patches = None
 
-    # ------------------------------------------------------------------
     @staticmethod
     def _init_weights(model):
         """Initialize weights following the original TS-JEPA (trunc_normal for Linear, constant for LayerNorm)."""
@@ -100,7 +99,6 @@ class TSJEPATrainer:
                 nn.init.constant_(m.bias, 0)
                 nn.init.constant_(m.weight, 1.0)
 
-    # ------------------------------------------------------------------
     def _build_models(self, T):
         """Construct encoder, predictor, and EMA encoder."""
         D = self.input_dims
@@ -136,7 +134,6 @@ class TSJEPATrainer:
         for p in self._net_ema.parameters():
             p.requires_grad = False
 
-    # ------------------------------------------------------------------
     def _patchify(self, data):
         """Convert (N, T, D) numpy to (N, num_patches, patch_size*D) tensor."""
         N, T, D = data.shape
@@ -150,7 +147,6 @@ class TSJEPATrainer:
         data = data.reshape(N, self.num_patches, ps * D)
         return torch.from_numpy(data).float()
 
-    # ------------------------------------------------------------------
     def _generate_masks(self, batch_size):
         """Generate random mask / non-mask index tensors.
 
@@ -176,7 +172,6 @@ class TSJEPATrainer:
         non_masks = [torch.stack(non_masks_list)]   # [(B, num_unmasked)]
         return masks, non_masks
 
-    # ------------------------------------------------------------------
     def fit(self, train_data, epochs, verbose=False, callback=None):
         """Pre-train the TS-JEPA encoder.
 
@@ -302,7 +297,6 @@ class TSJEPATrainer:
 
         return self
 
-    # ------------------------------------------------------------------
     def encode(self, data, raw=False):
         """Produce representations.
 
@@ -360,7 +354,6 @@ class TSJEPATrainer:
                 result = result.reshape(n_chunks, N, -1).mean(axis=0)
         return result
 
-    # ------------------------------------------------------------------
     @property
     def model(self):
         return self._net

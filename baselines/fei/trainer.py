@@ -72,11 +72,7 @@ class _ResBlock(nn.Module):
 class _ResNet(nn.Module):
     """1-D ResNet matching FEI's 'big' size (paper default).
 
-    Channels: 16 -> 128 -> 256 -> 512 -> 1024. The original FEIConfig sets
-    encoder_size='big' which selects this 1024-dim final layer; an earlier
-    version of this wrapper used 'tiny' (128-dim) for representation-size
-    alignment with SimMTM, but that downsized FEI's capacity ~50x relative
-    to its paper configuration.
+    Channels: 16 -> 128 -> 256 -> 512 -> 1024 (FEIConfig encoder_size='big').
     """
 
     def __init__(self, stride=2):
@@ -140,7 +136,7 @@ class FEITrainer:
         if output_dims != self._FIXED_OUTPUT_DIMS:
             warnings.warn(
                 f"FEI architecture produces {self._FIXED_OUTPUT_DIMS}-dim "
-                f"representations (tiny ResNet final layer); requested "
+                f"representations (final ResNet layer); requested "
                 f"output_dims={output_dims} is ignored.",
                 stacklevel=2,
             )
@@ -166,7 +162,6 @@ class FEITrainer:
         self._net = None  # alias used by @model property
         self._T = None
 
-    # ------------------------------------------------------------------
     def _build_model(self, T):
         """Construct all FEI sub-modules."""
         D = self.input_dims
@@ -223,8 +218,7 @@ class FEITrainer:
             torch.randn(freq_len, shrink_dim, device=self.device)
         )
 
-        # Convenience: collect all trainable parameters into a ModuleList
-        # so we can pass them to the optimizer.
+        # Groups the trainable modules for .train() and the model property.
         self._net = nn.ModuleDict({
             "input_embedding": self._input_embedding,
             "encoder": self._encoder,
@@ -236,7 +230,6 @@ class FEITrainer:
 
         self._T = T
 
-    # ------------------------------------------------------------------
     def _mask_encode(self, masks):
         """Encode frequency masks into embeddings.
 
@@ -255,7 +248,6 @@ class FEITrainer:
         )
         return mask_embed
 
-    # ------------------------------------------------------------------
     def _generate_mask_pool(self, pool_size, T):
         """Pre-generate a pool of frequency masks."""
         if self.mask_type == "discrete":
@@ -267,12 +259,10 @@ class FEITrainer:
                 pool_size, T, list(self.mask_ratio), self.target_num,
             )
 
-    # ------------------------------------------------------------------
     def _select_masks(self, batch_size, mask_pool):
         indices = torch.randperm(mask_pool.size(0))[:batch_size]
         return mask_pool[indices]
 
-    # ------------------------------------------------------------------
     def fit(self, train_data, epochs, verbose=False, callback=None):
         """Pre-train the FEI encoder.
 
@@ -317,10 +307,8 @@ class FEITrainer:
 
         data_t = torch.from_numpy(data)
         dataset = TensorDataset(data_t)
-        # drop_last=False: when post-chunking N < batch_size (e.g. ETTh1 fcst
-        # T=8640 / mtl=2048 → N_chunks=4), drop_last=True would yield 0 batches
-        # and silently skip all training — encoder stays at random init with no
-        # error. Same hazard for UEA cls datasets with N_train < 16.
+        # drop_last=False: with N < batch_size (e.g. ETTh1 split into 4 chunks)
+        # drop_last=True would give 0 batches and skip training silently.
         loader = DataLoader(
             dataset, batch_size=min(self.batch_size, N),
             shuffle=True, drop_last=False,
@@ -436,7 +424,6 @@ class FEITrainer:
 
         return self
 
-    # ------------------------------------------------------------------
     def encode(self, data, raw=False):
         """Produce representations.
 
@@ -447,7 +434,7 @@ class FEITrainer:
 
         Returns
         -------
-        np.ndarray, shape (N, 128) or (N, T', 128) if raw
+        np.ndarray, shape (N, 1024) or (N, T', 1024) if raw
         """
         if self._net is None:
             raise RuntimeError(
@@ -480,7 +467,6 @@ class FEITrainer:
 
         return np.concatenate(outputs, axis=0)
 
-    # ------------------------------------------------------------------
     @property
     def model(self):
         return self._net

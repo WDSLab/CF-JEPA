@@ -130,10 +130,8 @@ def evaluate_classifier(z_train, train_labels, z_test, test_labels, protocol='sv
     z_test = scaler.transform(z_test)
     z_train = np.nan_to_num(z_train, nan=0.0, posinf=0.0, neginf=0.0)
     z_test = np.nan_to_num(z_test, nan=0.0, posinf=0.0, neginf=0.0)
-    # Defensive clip: extreme finite values (encoder explosion on hard datasets
-    # like PigCVP) survive StandardScaler and cause SVM dual coefs to diverge
-    # to Inf during fit. After scaling, normal values lie in [-3, 3]; clipping
-    # at +/-10 only touches pathological outliers.
+    # Clip extreme values (exploding encoders, e.g. PigCVP) that make the SVM
+    # dual coefficients diverge; scaled values normally lie in [-3, 3].
     z_train = np.clip(z_train, -10.0, 10.0)
     z_test = np.clip(z_test, -10.0, 10.0)
 
@@ -193,10 +191,8 @@ def run_classification_checkpoints(method, dataset, checkpoint_epochs, device='c
     trainer = get_trainer(method=method, input_dims=train_data.shape[2], device=device,
                           dataset=dataset, **method_kwargs)
 
-    # Dual-encoder eval: cf_jepa also reports its EMA target encoder as
-    # 'cf_jepa_target'. The main row is the online encoder, which the paper
-    # uses for classification (forecasting and anomaly detection use the
-    # target encoder; see those runners).
+    # The main row is the online encoder (used for classification); cf_jepa
+    # also writes its EMA target encoder as 'cf_jepa_target'.
     target_label = 'cf_jepa_target' if method == 'cf_jepa' else None
     done = {label: cls_done_pairs(eval_csv, label, seed, hidden_dims, repr_dims)
             for label in filter(None, (method, target_label))}
@@ -331,7 +327,7 @@ def main():
                 print(f"\n[GPU {rank}] [{idx + 1}/{total}] Done: {dataset} (seed {seed})\n")
 
         main_print(f"\n{'='*70}")
-        main_print(f"{args.method.upper()} CHECKPOINT ITERATION {iteration} COMPLETE")
+        main_print(f"{args.method.upper()} CLASSIFICATION ITERATION {iteration} COMPLETE")
         main_print(f"{'='*70}")
 
     failures.finish()

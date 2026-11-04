@@ -60,7 +60,7 @@ def print_seed_status(title, header_lines, missing, keys, combo_label):
     for m in missing:
         groups.setdefault(tuple(m[k] for k in keys), []).append(m['seed'])
     if not groups:
-        print("\n  All complete!")
+        print("\n  All complete.")
     for (a, b, c), seeds in sorted(groups.items()):
         print(f"  {a:>10} | {b:>5} | {c:>8} | seeds: {', '.join(str(s) for s in sorted(seeds))}")
 

@@ -23,7 +23,7 @@ from config import UCR_PATH, UEA_PATH
 from utils.launcher import add_common_args, parse_run_plan, run_jobs, select_methods
 from utils.result_status import CLS_CSV, cls_completed_datasets, dims_for
 
-# Paper scope: UCR 126 (t1+t2+t3) + UEA 26 (t1+t2). t4/t3 excluded.
+# Paper scope: UCR 126 (t1+t2+t3) + UEA 26 (t1+t2). UCR t4 and UEA t3 excluded.
 SPLIT_FILES = {
     'UCR': ['splits/datasets_ucr_t1.txt', 'splits/datasets_ucr_t2.txt',
             'splits/datasets_ucr_t3.txt'],
@@ -85,7 +85,7 @@ def check_status(methods, data_types, datasets_file, seeds, checkpoint_epochs,
 
 def print_status(missing, checkpoint_epochs, seeds):
     print("\n" + "=" * 60)
-    print(" Checkpoint Experiment Status")
+    print(" Classification Experiment Status")
     print(f" Checkpoints: {checkpoint_epochs}")
     print(f" Seeds: {seeds}")
     print("=" * 60)
@@ -94,7 +94,7 @@ def print_status(missing, checkpoint_epochs, seeds):
     for m in missing:
         groups.setdefault((m['method'], m['data_type']), []).append(m)
     if not groups:
-        print("\n  All complete!")
+        print("\n  All complete.")
     for (method, data_type), items in sorted(groups.items()):
         seeds_info = ', '.join(f"seed{m['seed']}({m['done']}/{m['expected']})" for m in items)
         print(f"  {method:>10} | {data_type:>3} | {seeds_info}")
@@ -160,9 +160,9 @@ def main():
     if args.check:
         return
     if not missing:
-        print("\nNothing to run!")
+        print("\nNothing to run.")
         return
-    print(f"\n>>> Running {len(missing)} missing checkpoint jobs...")
+    print(f"\n>>> Running {len(missing)} missing classification runs...")
     run_missing(missing, args, checkpoint_epochs)
     print("\n\n>>> Final status:")
     print_status(check(), checkpoint_epochs, seeds)

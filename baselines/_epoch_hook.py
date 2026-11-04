@@ -17,8 +17,7 @@ the value in this order:
    pattern all three upstream ``fit()`` methods use) and return its last
    element. T-Rep appends before ``n_epochs += 1`` so this yields the
    current epoch's loss exactly; AutoTCL/InfoTS append after the increment,
-   so this yields the previous epoch's loss (one-step lag — still beats
-   the constant-0 fallback for CSV logging and loss-curve visualisation).
+   so this yields the previous epoch's loss (one-epoch lag).
 3. ``0.0`` as a last-resort default.
 
 Usage

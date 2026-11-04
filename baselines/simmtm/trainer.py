@@ -2,7 +2,7 @@
 SimMTM trainer wrapper (classification only).
 
 Wraps the TFC model from SimMTM_Classification to expose the unified
-cf_jepa trainer interface.  Pre-trains with masked time-series
+trainer interface.  Pre-trains with masked time-series
 contrastive + reconstruction losses, then encodes via the 128-dim dense head.
 """
 
@@ -102,7 +102,6 @@ class SimMTMTrainer:
         self._net = None
         self._T = None
 
-    # ------------------------------------------------------------------
     def _build_model(self, T):
         """Construct the TFC model with correct dimension configs."""
         cnn_out_len = _get_cnn_out_len(
@@ -138,7 +137,6 @@ class SimMTMTrainer:
         self._net.head = nn.Linear(head_in, head_out).to(self.device)
         self._T = T
 
-    # ------------------------------------------------------------------
     def fit(self, train_data, epochs, verbose=False, callback=None):
         """Pre-train the SimMTM encoder.
 
@@ -171,9 +169,8 @@ class SimMTMTrainer:
         # (N, T, D) -> (N, D, T) for Conv1d
         data_t = torch.from_numpy(data).permute(0, 2, 1)
         dataset = TensorDataset(data_t)
-        # drop_last=False: when N < batch_size (e.g. UEA AtrialFibrillation N=15,
-        # batch=16), drop_last=True would yield 0 batches and silently skip all
-        # training — encoder would stay at random init with no error raised.
+        # drop_last=False: with N < batch_size (e.g. AtrialFibrillation, N=15)
+        # drop_last=True would give 0 batches and skip training silently.
         loader = DataLoader(
             dataset, batch_size=min(self.batch_size, N),
             shuffle=True, drop_last=False,
@@ -227,7 +224,6 @@ class SimMTMTrainer:
 
         return self
 
-    # ------------------------------------------------------------------
     def encode(self, data, raw=False):
         """Produce fixed-length representations.
 
@@ -266,7 +262,6 @@ class SimMTMTrainer:
 
         return np.concatenate(outputs, axis=0)
 
-    # ------------------------------------------------------------------
     @property
     def model(self):
         return self._net

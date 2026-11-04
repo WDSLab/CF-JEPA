@@ -1,8 +1,5 @@
 """
-CF-JEPA trainer wrapper for cf_jepa.
-
-Model code: encoder.py, losses.py, cf_jepa.py.
-This file provides the cf_jepa-compatible interface:
+CF-JEPA trainer, with the same interface as the baseline trainers:
   - fit(train_data, epochs, verbose, callback)
   - encode(data, raw=False, use_target=False)
 
@@ -24,8 +21,6 @@ from .losses import variance_reg, covariance_reg
 from .cf_jepa import PARAMS_128, PARAMS_320, LinearPredictor, sample_crop
 
 
-
-
 def _get_default_params(output_dims=320):
     """Return Optuna-tuned params for given output dimension."""
     if output_dims == 128:
@@ -34,7 +29,7 @@ def _get_default_params(output_dims=320):
 
 
 class CFJEPATrainer:
-    """CF-JEPA trainer with cf_jepa-compatible interface."""
+    """Online encoder, EMA target encoder and three zone predictors."""
 
     def __init__(self, input_dims, output_dims=320, hidden_dims=256, depth=5,
                  device='cuda', lr=None, batch_size=16,
@@ -66,7 +61,7 @@ class CFJEPATrainer:
         self.max_train_length = max_train_length
         self.encoder = None
         self.target_encoder = None
-        self._predictor = None  # Single nn.Module (or None for 'none')
+        self._predictor = None
         self._train_mean = None
         self._train_std = None
         self._epoch_counter = 0
@@ -223,20 +218,11 @@ class CFJEPATrainer:
                     var_loss = torch.tensor(0.0, device=device)
                     cov_loss = torch.tensor(0.0, device=device)
 
-                # Multi-scale invariance requires multiple crop views from the
-                # same sequence, supplied by z_crops_raw.
-                #
-                # NOTE on the pool_size loop: each pooled crop is collapsed back
-                # to (B, D) by the trailing .mean(dim=1) below, so the three pool
-                # sizes yield (near-)identical vectors — exactly identical when
-                # the crop length is divisible by the pool size. The term is
-                # therefore crop-level invariance (agreement between the mean-
-                # pooled representations of crops from the same series), not
-                # per-bin agreement at three temporal resolutions. Retaining the
-                # bins would require aligning bins across crops, which is not
-                # well defined here because crops cover different, arbitrarily
-                # positioned spans of the series. Kept as-is: all reported
-                # numbers were produced with this formulation.
+                # Invariance across the crops of one series. The trailing
+                # .mean(dim=1) collapses each pooled crop to (B, D), so the three
+                # pool sizes give (near-)identical vectors: in effect this is
+                # crop-level invariance, not per-bin agreement. Kept as-is
+                # because all reported numbers use it.
                 if z_crops_raw:
                     inv_loss = 0
                     min_crop_len = min(z.shape[1] for z in z_crops_raw)
@@ -265,11 +251,8 @@ class CFJEPATrainer:
                         + lambda_inv * inv_loss
                         + horizon_weight * loss_pred_total)
 
-                # NaN/Inf guard: skip step if loss diverged this batch.
-                # Preserves encoder weights from the last good step instead of
-                # corrupting them via backward. Standard safeguard for SSL
-                # training, where rare numerical instabilities can occur on
-                # long sequences (e.g. ETTm at T=2048 chunks).
+                # Skip the step if the loss is not finite (rare, on long
+                # sequences such as ETTm with T=2048 chunks).
                 if not torch.isfinite(loss):
                     self._nan_skip_count = getattr(self, '_nan_skip_count', 0) + 1
                     if verbose and self._nan_skip_count <= 5:
@@ -285,27 +268,12 @@ class CFJEPATrainer:
                 self._optimizer.step()
 
                 with torch.no_grad():
-                    # EMA over PARAMETERS only (weight/bias and BatchNorm affine
-                    # gamma/beta). This matches the reference momentum-encoder
-                    # implementations (MoCo, BYOL), which likewise EMA parameters
-                    # and not buffers.
-                    #
-                    # One consequence is specific to this code and worth stating
-                    # plainly. BatchNorm running statistics are buffers, so they
-                    # are outside this loop; in the reference implementations the
-                    # target still fills them by running its forward pass in train
-                    # mode. Here the target is deep-copied before training and kept
-                    # in eval() (see __init__ and encode()), so its running stats
-                    # stay at their initial values (mean 0, var 1) and the target's
-                    # BatchNorm reduces to an identity normalization followed by
-                    # the EMA-tracked affine transform.
-                    #
-                    # All reported numbers were produced with this configuration.
-                    # Switching the target to train mode (the reference behavior)
-                    # was checked separately and was not adopted: it changes the
-                    # target representation and the reported forecasting/anomaly
-                    # numbers do not reproduce under it. Classification is
-                    # unaffected, as it is evaluated with the online encoder.
+                    # EMA over parameters only, as in MoCo/BYOL. The target is
+                    # kept in eval() and never runs in train mode, so its
+                    # BatchNorm running stats stay at mean 0 / var 1 and only the
+                    # affine part follows the online encoder. All reported
+                    # numbers use this; a train-mode target changes the
+                    # forecasting/anomaly results.
                     for tp, pp in zip(self.target_encoder.parameters(),
                                       self.encoder.parameters()):
                         tp.data.mul_(ema_cur).add_(pp.data, alpha=1 - ema_cur)

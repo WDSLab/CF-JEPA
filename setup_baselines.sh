@@ -1,7 +1,7 @@
 #!/bin/bash
 # ============================================================
 # Clone all baseline repos into the correct directories.
-# Run this once after cloning cf_jepa on a new machine.
+# Run this once after cloning this repository on a new machine.
 # ============================================================
 
 set -e
@@ -37,4 +37,4 @@ echo "Installing dependencies..."
 pip install -r requirements.txt
 
 echo ""
-echo "Done! All baselines ready."
+echo "Done."

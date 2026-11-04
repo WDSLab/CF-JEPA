@@ -60,11 +60,8 @@ class TimesURLTrainer:
         self._epoch_counter = 0
         self._callback = callback
         prepared = self._prepare_train_data(train_data)
-        # Match upstream train.py:145 — paper uses AdamW with constant lr=1e-4.
-        # The fit() signature default `is_scheduler=True` is a fallback; the
-        # actual paper-faithful call sets it to False unless --sgd is enabled.
-        # Without this, CosineAnnealingLR(T_max=epochs) drives lr → 0 by the
-        # final epochs, sharply reducing late-stage learning.
+        # Upstream train.py:145 trains with a constant lr; fit()'s default
+        # is_scheduler=True would cosine-anneal it to 0.
         self._model.fit(prepared, n_epochs=self._model.n_epochs + epochs,
                         verbose=verbose, is_scheduler=False)
         return self
@@ -79,7 +76,6 @@ class TimesURLTrainer:
         N, T, D = data_clean.shape
         time_pos = np.linspace(0, 1, T, dtype=np.float32)[None, :, None]
         time_pos = np.broadcast_to(time_pos, (N, T, 1)).copy()
-        # concat: [data(D), time(1), mask(D)] → (N, T, 2D+1)
         combined = np.concatenate([data_clean, time_pos, mask], axis=-1)
         if raw:
             return self._model.encode(combined, encoding_window=None)

@@ -1,7 +1,7 @@
 """
 CF-JEPA — Crop-based Forward Joint-Embedding Predictive Architecture for Time Series.
 
-Paper main:
+Method:
   1. Random crops → online encoder → 3 zone-conditional LinearPredictors
      forecast future-half latents in 3 zones (L1 on cosine-normalized targets)
   2. Target encoder (EMA of online encoder, stop-grad) — provides prediction
@@ -14,9 +14,8 @@ Evaluation:
   - Classification: online encoder → adaptive_avg_pool(n_bins) → flatten → SVM
   - Forecasting: target encoder → causal encoding → Ridge regression
 
-This module exposes the static building blocks (PARAMS dicts, the zone
-predictor, and sample_crop) consumed by the trainer (`trainer.py`). The actual
-training loop lives in `CFJEPATrainer.fit`.
+This module holds the hyperparameters, the zone predictor and sample_crop.
+The training loop is `CFJEPATrainer.fit` in trainer.py.
 """
 
 import numpy as np
@@ -24,9 +23,8 @@ import torch
 import torch.nn as nn
 
 # Optuna-tuned hyperparameters (13 hard UCR datasets, n_bins=8).
-# NOTE: enc_depth in this dict is overwritten by the trainer's `depth=5`
-# default (CFJEPATrainer.__init__) — depth=5 is the value actually used in
-# all experiments. The values below reflect the trainer-applied configuration.
+# enc_hidden, enc_output and enc_depth are set by CFJEPATrainer.__init__
+# (defaults 256 / output_dims / 5, the values used in all experiments).
 PARAMS_128 = dict(
     lr=0.000340, enc_hidden=256, enc_output=128, enc_depth=5, n_crops=4,
     crop_min=0.310, crop_max=0.686, ema_decay=0.992,

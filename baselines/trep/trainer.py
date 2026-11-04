@@ -15,13 +15,7 @@ class TRepTrainer:
     def __init__(self, input_dims, output_dims=128, hidden_dims=None, depth=10,
                  device='cuda', lr=0.001, batch_size=16,
                  max_train_length=None, **kwargs):
-        # T-Rep paper §5.2 explicitly designs around F=128 (vs 320 baselines):
-        # "T-Rep outperforms all baselines with a latent space that is almost
-        # 3 times smaller, using only F = 128 dimensions ... attributed to its
-        # comprehensive treatment of time ... with its time-embedding module."
-        # Following paper-faithful policy (parallel to architecture-fixed
-        # exceptions SimMTM 128, TS-JEPA 384, FEI 1024), we keep F=128 — the
-        # method's claimed contribution depends on smaller-dim sufficiency.
+        # Output dims fixed at 128, as designed in the T-Rep paper (Sec 5.2).
         self.output_dims = output_dims
         self.max_train_length = max_train_length
         # Use original T-Rep paper's layer-wise hidden dims

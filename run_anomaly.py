@@ -130,7 +130,7 @@ def main():
     def show(missing):
         print_seed_status('Anomaly Detection Experiment Status',
                           [f'Checkpoints: {checkpoint_epochs}', f'Seeds: {seeds}',
-                           f'Scoring: {SCORINGS}'],
+                           f'Scoring: {scorings}'],
                           missing, keys=('method', 'dataset', 'scoring'),
                           combo_label='method-dataset-scoring')
 
@@ -139,7 +139,7 @@ def main():
     if args.check:
         return
     if not missing:
-        print("\nNothing to run!")
+        print("\nNothing to run.")
         return
     print(f"\n>>> Running {len(missing)} missing anomaly detection jobs...")
     run_missing(missing, args, checkpoint_epochs)

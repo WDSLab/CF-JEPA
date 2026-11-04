@@ -1,5 +1,5 @@
 """
-CF-JEA Losses — VICReg regularization components
+CF-JEPA losses: VICReg variance and covariance terms.
 """
 
 import torch

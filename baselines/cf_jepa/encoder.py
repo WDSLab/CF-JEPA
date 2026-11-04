@@ -1,5 +1,5 @@
 """
-CF-JEA Encoder — MultiScale Dilated Depthwise Convolution
+CF-JEPA encoder: multi-scale dilated depthwise convolution.
 """
 
 import torch

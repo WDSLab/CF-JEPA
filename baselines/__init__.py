@@ -1,7 +1,7 @@
 # Baseline models for time series SSL
 # - ts2vec: TS2Vec (AAAI 2022)
 # - softclt: SoftCLT (ICLR 2024)
-# - timesurl: TimesURL (ICML 2024)
+# - timesurl: TimesURL (AAAI 2024)
 # - trep: T-Rep (NeurIPS 2023)
 # - autotcl: AutoTCL (ICLR 2024)
 # - infots: InfoTS (ICML 2023)
@@ -9,10 +9,7 @@
 # - simmtm: SimMTM (NeurIPS 2023)
 # - ts_jepa: TS-JEPA (2024)
 # - fei: FEI (2024)
-# - cf_jepa: CF-JEPA (ours, paper main — 3-zone forward latent prediction + horizon annealing)
-#                          Skips crop loop & multi-scale invariance (single-view).
-#                         (TimeMAE style). Skips crop loop & multi-scale invariance.
-#                              same building block as encoder backbone Transformer in 5D)
+# - cf_jepa: CF-JEPA (ours)
 
 
 METHODS = [

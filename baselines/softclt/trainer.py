@@ -1,10 +1,7 @@
 """SoftCLT trainer wrapper.
 
-Fair comparison: uses fixed hyperparameters (tau_inst=5.0, tau_temp=1.0)
-across all datasets — the median of the paper's per-dataset tuned values
-(see softclt_ts2vec/hyperparameters/cls_hyperparams.csv). This activates
-both soft-CL mechanisms (instance + temporal) without per-dataset tuning,
-matching the paper's algorithmic contribution under a fair protocol.
+Fixed tau_inst=5.0 and tau_temp=1.0 for all datasets: the median of the
+paper's per-dataset values (softclt_ts2vec/hyperparameters/cls_hyperparams.csv).
 """
 
 import os
@@ -44,19 +41,11 @@ class SoftCLTTrainer:
         self.output_dims = output_dims
         self.max_train_length = max_train_length
 
-        # Fixed hyperparameters for fair comparison (no per-dataset tuning).
-        # Values = median of paper's per-dataset CSV (n=128, tau_inst median=5.0,
-        # tau_temp median=1.0). Both > 0 → both soft-CL mechanisms active.
         tau_inst = kwargs.get("tau_inst", 5.0)
         tau_temp = kwargs.get("tau_temp", 1.0)
 
-        # Force-disable instance soft CL for anomaly datasets to mirror
-        # upstream train.py:167-168 (`sim_mat=None` for forecasting / anomaly).
-        # Anomaly data is (n_series, T_padded, 1) where per-series DTW between
-        # different time series is structurally inapplicable and the O(N²·T²)
-        # preprocessing is prohibitively slow (KPI 58×73K cells, Yahoo 367×840
-        # ≈ minutes-to-days). Forecasting (N=1) is caught by the fit-time
-        # check; the dataset-name guard catches anomaly's multi-series case.
+        # Instance soft CL is off for KPI/Yahoo, as in upstream train.py:167-168
+        # (sim_mat=None); forecasting (N=1) is handled in fit().
         anomaly_dataset = str(kwargs.get('dataset', '')).lower() in {'kpi', 'yahoo'}
         soft_instance = (tau_inst > 0) and not anomaly_dataset
         soft_temporal = tau_temp > 0
@@ -143,18 +132,12 @@ class SoftCLTTrainer:
         self._callback = callback
         run_dir = tempfile.mkdtemp(prefix="softclt_run_")
 
-        # Compute soft labels for instance-wise soft CL.
-        # Skip when N==1 (forecasting: single long series) or T > 5000 (anomaly:
-        # full-length series, e.g. KPI T=73K / 58 series). Instance soft CL is
-        # undefined for N=1 and structurally inapplicable to anomaly's
-        # per-series-as-instance setup. Matches upstream train.py:167-168 which
-        # forces sim_mat=None for forecasting / anomaly task types.
-        # T threshold also avoids O(N²·T²) DTW preprocessing blow-up.
+        # Soft labels for instance-wise soft CL. Skipped for N == 1
+        # (forecasting) and T > 5000, where DTW (O(N²T²)) is too slow.
         N, T = train_data.shape[0], train_data.shape[1]
         soft_labels = None
         use_instance = self._soft_instance and N > 1 and T <= 5000
         if use_instance:
-            # Cache sim_mat to avoid recomputation on incremental fit() calls
             if not hasattr(self, '_cached_sim_mat') or self._cached_sim_mat is None:
                 self._cached_sim_mat = self._compute_sim_mat(
                     train_data, norm_axis=self._dtw_norm_axis)
@@ -165,11 +148,8 @@ class SoftCLTTrainer:
             soft_labels = ((2 * alpha) / (1 + np.exp(-self._tau_inst * (-dist_mat)))) + \
                           (1 - alpha) * np.eye(dist_mat.shape[0])
 
-        # Sync model.soft_instance with our actual decision: upstream hier_CL_soft
-        # references soft_labels_L only inside `if soft_labels is not None`,
-        # but the inst-CL branch is gated by `soft_instance` flag → UnboundLocalError
-        # when soft_instance=True but soft_labels=None. Restore after fit so the
-        # trainer object's invariants survive across calls.
+        # Match model.soft_instance to use_instance (upstream raises
+        # UnboundLocalError when it is True without soft labels); restored after fit.
         prev_soft_instance = self._model.soft_instance
         self._model.soft_instance = use_instance
 

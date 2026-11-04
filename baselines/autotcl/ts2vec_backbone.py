@@ -1,24 +1,14 @@
-"""TS2Vec encoder backbone for AutoTCL classification / anomaly mode.
+"""TS2Vec encoder backbone for AutoTCL (all tasks).
 
-Verbatim copy of TS2Vec's dilated-conv encoder (AAAI 2022) — the
+Copy of TS2Vec's dilated-conv encoder (AAAI 2022) with one change: forward()
+clones its input (see below). Copied: the
 ``TSEncoder``, ``DilatedConvEncoder``, ``ConvBlock``, ``SamePadConv``
 and mask helpers from ``baselines/ts2vec/ts2vec/models/{encoder.py,
 dilated_conv.py}``.
 
-Why a local copy?
------------------
-AutoTCL paper claims a TS2Vec backbone for classification (Sec 4.2;
-App D.1: "we followed the experiment setting of TS2Vec"; App D.3.1
-Table 7 reports the TS2Vec-backbone ablation). The released
-``AutoTCL_CoST.py`` only ships the CoST-no-SFD backbone, so we
-restore the paper-stated backbone here.
-
-Importing from ``baselines.ts2vec.ts2vec.models.encoder`` would
-create a cross-baseline dependency on the TS2Vec upstream clone
-(gitignored). Keeping a local copy under the AutoTCL wrapper directory
-matches the CF-JEPA convention (see ``baselines/cf_jepa/encoder_variants.py``)
-and ensures the file is committed and survives ``setup_baselines.sh``
-re-clones.
+The AutoTCL paper uses a TS2Vec backbone (Sec 4.2, App D.1), but the
+released code ships only the CoST backbone. The copy lives here so AutoTCL
+does not depend on another baseline's checkout.
 
 Source: https://github.com/zhihanyue/ts2vec (TS2Vec, AAAI 2022).
 """
@@ -132,11 +122,8 @@ class TSEncoder(nn.Module):
         self.repr_dropout = nn.Dropout(p=0.1)
 
     def forward(self, x, mask=None):  # x: B x T x input_dims
-        # AutoTCL calls forward twice in one step: _net(x) and _net(ax) where
-        # ax = weight_s * mask_h * x. Original TS2Vec encoder mutated x in place
-        # (`x[~nan_mask] = 0`), which corrupts ax's autograd graph (x version 0
-        # captured in ax → version 1 after first call). Clone first to keep
-        # the input pristine across multiple forward passes.
+        # AutoTCL calls forward on x and on ax (built from x) in one step; the
+        # in-place `x[~nan_mask] = 0` below would break ax's autograd graph.
         x = x.clone()
         nan_mask = ~x.isnan().any(axis=-1)
         x[~nan_mask] = 0

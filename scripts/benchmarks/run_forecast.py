@@ -195,9 +195,8 @@ def run_forecast_checkpoints(method, dataset, checkpoint_epochs, device='cuda', 
     trainer = get_trainer(method=method, input_dims=data.shape[2], device=device,
                           dataset=dataset, **method_kwargs)
 
-    # Main rows use the EMA target encoder where one exists (asymmetric dual
-    # deployment). Dual-encoder eval: cf_jepa also reports its online encoder
-    # as 'cf_jepa_online'.
+    # Main rows use the EMA target encoder where one exists; cf_jepa also
+    # writes its online encoder as 'cf_jepa_online'.
     online_label = 'cf_jepa_online' if method == 'cf_jepa' else None
     eval_results = []
 
