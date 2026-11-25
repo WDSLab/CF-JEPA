@@ -2,7 +2,7 @@
 
 Official implementation of **CF-JEPA** (crop-based forward JEPA), a mask-free joint-embedding predictive architecture for time-series self-supervised learning, together with a unified benchmarking framework that re-evaluates 10 published baselines under a single fair-comparison protocol across **classification**, **forecasting**, and **anomaly detection**.
 
-> Paper: _CF-JEPA: Mask-free forward prediction with asymmetric encoder utilization for time-series representation learning_ (under review).
+> Paper: _CF-JEPA: Mask-free forward prediction with asymmetric encoder utilization for time-series representation learning_, Knowledge-Based Systems 355 (2027) 117305. https://doi.org/10.1016/j.knosys.2026.117305
 
 <p align="center">
   <img src="assets/OverallFramework.svg" alt="CF-JEPA overall framework" width="100%"/>
@@ -152,11 +152,14 @@ MIT — see [LICENSE](LICENSE).
 ## Citation
 
 ```bibtex
-@article{lee2026cfjepa,
+@article{lee2027cfjepa,
   title={CF-JEPA: Mask-free forward prediction with asymmetric encoder utilization for time-series representation learning},
   author={Lee, Jaehoon and Sim, Sunghyun},
-  journal={Under review},
-  year={2026}
+  journal={Knowledge-Based Systems},
+  volume={355},
+  pages={117305},
+  year={2027},
+  doi={10.1016/j.knosys.2026.117305}
 }
 ```
 
