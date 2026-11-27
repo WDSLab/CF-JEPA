@@ -6,6 +6,8 @@ protocol for classification, forecasting, and anomaly detection.
 
 > Paper: *CF-JEPA: Mask-free forward prediction with asymmetric encoder utilization for time-series representation
 > learning*, Knowledge-Based Systems 355 (2027) 117305. https://doi.org/10.1016/j.knosys.2026.117305
+>
+> Author: Jaehoon Lee ([@ijaehun](https://github.com/ijaehun)) · questions via GitHub Issues
 
 <p align="center">
   <img src="assets/OverallFramework.svg" alt="CF-JEPA overall framework" width="100%"/>
