@@ -1,18 +1,32 @@
 # CF-JEPA
 
-Official implementation of **CF-JEPA** (crop-based forward JEPA), a mask-free joint-embedding predictive architecture for time-series self-supervised learning, together with a unified benchmarking framework that re-evaluates 10 published baselines under a single fair-comparison protocol across **classification**, **forecasting**, and **anomaly detection**.
+Official code of **CF-JEPA** (crop-based forward JEPA), a mask-free joint-embedding predictive architecture for
+time-series self-supervised learning, with the benchmark that compares it with 10 published methods under one
+protocol for classification, forecasting, and anomaly detection.
 
-> Paper: _CF-JEPA: Mask-free forward prediction with asymmetric encoder utilization for time-series representation learning_, Knowledge-Based Systems 355 (2027) 117305. https://doi.org/10.1016/j.knosys.2026.117305
+> Paper: *CF-JEPA: Mask-free forward prediction with asymmetric encoder utilization for time-series representation
+> learning*, Knowledge-Based Systems 355 (2027) 117305. https://doi.org/10.1016/j.knosys.2026.117305
 
 <p align="center">
   <img src="assets/OverallFramework.svg" alt="CF-JEPA overall framework" width="100%"/>
 </p>
 
-## Abstract
+## Model
 
-**CF-JEPA** is a mask-free joint-embedding predictive architecture for time series. It replaces masking with **multi-horizon forward prediction** — random crops as context, short/mid/long-horizon futures as targets — directly using the temporal ordering of time series as the learning signal. We also exploit a strong online vs. EMA-target asymmetry (online → classification, EMA target → forecasting/anomaly) to cut multivariate forecasting MSE by 27% without an additional pretraining run.
+Masking is replaced by multi-horizon forward prediction: random crops are the context, and short-, mid-, and
+long-horizon futures are the targets.
 
-## Baselines
+```
+random crop   -> online encoder (multi-scale DWConv) -> three zone-conditional predictors (short / mid / long)
+whole series  -> EMA target encoder (stop-grad)      -> latents of the three future zones = targets
+```
+
+The online encoder is used for classification and the EMA target encoder for forecasting and anomaly detection,
+from the same pretraining run. The predictor loss weight decays from 1 to 0 over training (horizon annealing).
+Code: `baselines/cf_jepa/` (no upstream dependency); tuned settings (e.g. `lr=0.000225` for `D=320`) are the
+trainer's `DEFAULT_PARAMS`.
+
+## Compared methods
 
 | Method | Venue | Family |
 |---|---|---|
@@ -26,20 +40,36 @@ Official implementation of **CF-JEPA** (crop-based forward JEPA), a mask-free jo
 | TimesURL | AAAI 2024 | Contrastive |
 | TS-JEPA | arXiv 2025 | JEPA |
 | FEI | AAAI 2025 | JEPA (frequency) |
-| **CF-JEPA (ours)** | — | JEPA |
 
-## Setup
+## Repository
 
-```bash
-# 1. Clone this repo
-git clone https://github.com/WDSLab/CF-JEPA.git
-cd CF-JEPA
-
-# 2. Clone baseline upstream repos + install dependencies
-bash setup_baselines.sh
+```
+run_classification.py   entry points (dispatch to torchrun); --check shows progress
+run_forecast.py
+run_anomaly.py
+scripts/benchmarks/     workers for classification, forecasting, anomaly detection
+baselines/              CF-JEPA and wrappers of the compared methods (upstream cloned by setup_baselines.sh)
+utils/                  data loading, runner, anomaly scoring and metrics
+splits/                 dataset subset files (fast to slow)
+tests/                  unit tests: python -m unittest discover -s tests (no GPU)
+config.py               data paths
 ```
 
-Place datasets under `data/` (paths configurable in `config.py`):
+Each method has a trainer with `fit(train_data, epochs, verbose, callback)` and `encode(data, raw=False)`
+(`raw=True`: `(B, T, D)` before pooling, `raw=False`: `(B, D)`). `baselines.get_trainer(method, input_dims, **kwargs)`
+builds it; upstream code is isolated by `baselines/_import_helper.py`.
+
+## Installation
+
+```bash
+git clone https://github.com/WDSLab/CF-JEPA.git
+cd CF-JEPA
+bash setup_baselines.sh   # clones the compared methods and runs pip install -r requirements.txt
+```
+
+## Data
+
+Placed under `data/` (paths in `config.py`):
 
 | Variable | Default path | Contents |
 |---|---|---|
@@ -48,106 +78,48 @@ Place datasets under `data/` (paths configurable in `config.py`):
 | `FORECAST_PATH` | `data/forecast/` | ETTh1/2, ETTm1/2, weather, AirQuality, SML, Traffic CSVs |
 | `ANOMALY_PATH` | `data/anomaly/` | KPI, Yahoo pickles (univariate) + SMD/, MSL/, SMAP/, PSM/ (multivariate, Anomaly-Transformer preprocessing) |
 
-## Quick start
-
-### Classification (UCR + UEA)
-
-```bash
-# Single method, single seed (fast verify, ~few minutes)
-python run_classification.py --method cf_jepa --datasets_file splits/datasets_ucr_t1.txt --iterations 1
-
-# All methods on a fast subset (3 seeds = paper default)
-python run_classification.py --datasets_file splits/datasets_ucr_t1.txt --ngpu 2
-```
-
-### Forecasting
-
-```bash
-python run_forecast.py --method cf_jepa --datasets ETTh1 ETTh2 ETTm1 ETTm2
-```
-
-### Anomaly Detection
-
-```bash
-# Univariate (KPI, Yahoo) — delay-adjusted F1, mean+4sigma threshold
-python run_anomaly.py --method cf_jepa --scoring knn
-
-# Multivariate (SMD, MSL, SMAP, PSM) — same protocol (delay 7); one training scores both k-NN and Gaussian
-python run_anomaly.py --multivariate --ngpu 2
-
-# Both
-python run_anomaly.py --all --ngpu 2
-```
-
-### Status
-
-```bash
-python run_classification.py --check   # CSV-level progress
-python run_forecast.py --check
-python run_anomaly.py --check
-```
-
-Each run writes to `results/{cls,fcst,ano}_results.csv` (multivariate anomaly detection: `results/ano_mv_results.csv`, one row per evaluation protocol; the paper uses `delay_train4sigma`). Resume logic skips any (method, dataset, seed, epoch) tuple already present.
-
-## Architecture
-
-Each baseline lives in its own subdirectory under `baselines/`, exposing a unified trainer interface:
-
-- `fit(train_data, epochs, verbose, callback)` — train the encoder
-- `encode(data, raw=False)` — produce representations; `raw=True` returns pre-pooling `(B, T, D)`, `raw=False` returns post-pooling `(B, D)`
-
-The factory `baselines.get_trainer(method, input_dims, **kwargs)` instantiates the right wrapper. Original upstream code is cloned into each subdirectory by `setup_baselines.sh` and isolated via `baselines/_import_helper.py`.
-
-**CF-JEPA** is self-contained in `baselines/cf_jepa/` with no upstream dependency: three zone-conditional predictors on a multi-scale DWConv encoder, with horizon annealing. Tuned hyperparameters (e.g. `lr=0.000225` for `D=320`) are baked into the trainer's `DEFAULT_PARAMS` for reproducibility.
-
-
-## Fair-comparison protocol
+## Experiments
 
 | Setting | Value |
 |---|---|
-| Epochs | 200 (checkpoints at 50, 100, 200 for cls/anomaly; 50, 100, 200, 400 for fcst) |
-| Batch size | 16 (fixed) |
-| Learning rate | Each method's original paper value |
-| Hidden / repr dims | Each method's original paper value |
+| Epochs | 200 (checkpoints at 50, 100, 200 for classification and anomaly detection; 50, 100, 200, 400 for forecasting) |
+| Batch size | 16 |
+| Learning rate, hidden / representation sizes | each method's paper values |
 | Seeds | 3 (42, 43, 44) |
-| Cls eval | SVM (RBF) + SVM (Linear), maxpool + adaptive_avg pool |
-| Fcst eval | Ridge regression on causal representations |
-| Anomaly eval | k-NN + Gaussian scoring (`--scoring knn`, `--scoring gaussian`); delay-adjusted F1 with a training-statistics threshold (mean + 4σ) for both univariate (delay 7 for KPI, 3 for Yahoo) and multivariate (delay 7) benchmarks; point adjustment is not used |
+| Classification | SVM (RBF) + SVM (linear), max pooling + adaptive average pooling |
+| Forecasting | ridge regression on causal representations |
+| Anomaly detection | k-NN and Gaussian scoring; delay-adjusted F1 with a threshold from training statistics (mean + 4σ); delay 7 for KPI and the multivariate sets, 3 for Yahoo; no point adjustment |
 
-We fix **epochs** rather than iterations so all methods see the entire training set the same number of times, regardless of dataset size.
-
-## Multi-GPU
-
-Dataset-parallel via `torchrun` with dynamic queue distribution: each GPU grabs the next available dataset via a file-locked counter (`fcntl` on Linux, `msvcrt` on Windows; not a static split). Backend: Gloo. Anomaly detection runs one dataset per call and splits its seeds across GPUs instead. If a job fails, the runner continues with the remaining jobs and exits with code 1 at the end; the launchers list the failed jobs.
+Epochs are fixed rather than iterations, so every method sees the whole training set the same number of times.
 
 ```bash
-python run_classification.py --ngpu 4 --datasets_file splits/datasets_ucr_t1.txt
+# classification
+python run_classification.py --method cf_jepa --datasets_file splits/datasets_ucr_t1.txt --iterations 1   # one seed
+python run_classification.py --datasets_file splits/datasets_ucr_t1.txt --ngpu 2                         # all methods, 3 seeds
+
+# forecasting
+python run_forecast.py --method cf_jepa --datasets ETTh1 ETTh2 ETTm1 ETTm2
+
+# anomaly detection
+python run_anomaly.py --method cf_jepa --scoring knn     # univariate (KPI, Yahoo)
+python run_anomaly.py --multivariate --ngpu 2            # SMD, MSL, SMAP, PSM; one run scores k-NN and Gaussian
+python run_anomaly.py --all --ngpu 2                     # both
+
+# progress
+python run_classification.py --check
 ```
 
-## Repository layout
+Results go to `results/{cls,fcst,ano}_results.csv` (multivariate anomaly detection: `results/ano_mv_results.csv`, one
+row per protocol; the paper uses `delay_train4sigma`). Runs resume: a (method, dataset, seed, epoch) row already
+present is skipped.
 
-```
-CF-JEPA/
-├── baselines/              # 10 baseline wrappers + CF-JEPA
-│   ├── ts2vec/             # each has trainer.py; upstream cloned by setup_baselines.sh
-│   ├── softclt/
-│   ├── ... (8 more)
-│   └── cf_jepa/            # self-contained: encoder, predictor, losses, trainer
-├── scripts/
-│   └── benchmarks/         # paper main entry points (cls / fcst / ano)
-├── utils/                  # data loaders, runner plumbing, anomaly scoring/metrics
-├── tests/                  # unit tests: python -m unittest discover -s tests (no GPU)
-├── splits/                 # dataset subset files (fast → slow ordering)
-├── config.py               # data root paths
-├── run_classification.py   # user-facing wrappers (dispatch via torchrun)
-├── run_forecast.py
-├── run_anomaly.py
-└── setup_baselines.sh
-```
+With `--ngpu`, datasets are shared out through `torchrun` (Gloo): each GPU takes the next dataset from a file-locked
+counter. Anomaly detection runs one dataset per call and splits its seeds across GPUs. A failed job does not stop the
+others; the run exits with code 1 and lists the failed jobs.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT (`LICENSE`). The compared methods cloned into `baselines/` keep their own licenses.
 
 ## Citation
 
@@ -165,7 +137,7 @@ MIT — see [LICENSE](LICENSE).
 
 ## Acknowledgements
 
-We thank the authors of the 10 baseline methods for releasing their code:
+Code of the compared methods:
 [TS2Vec](https://github.com/zhihanyue/ts2vec),
 [T-Rep](https://github.com/Let-it-Care/T-Rep),
 [AutoTCL](https://github.com/AslanDing/AutoTCL),
